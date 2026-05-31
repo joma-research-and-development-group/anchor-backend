@@ -1,21 +1,21 @@
 from datetime import datetime
 from uuid import UUID
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class ProjectCreate(BaseModel):
-    name: str
-    slug: str
-    bundle_id_ios: str | None = None
-    bundle_id_android: str | None = None
+    name: str = Field(min_length=1, max_length=255)
+    slug: str = Field(min_length=1, max_length=100, pattern=r"^[a-z0-9][a-z0-9-]*$")
+    bundle_id_ios: str | None = Field(default=None, max_length=255)
+    bundle_id_android: str | None = Field(default=None, max_length=255)
 
 
 class ProjectUpdate(BaseModel):
-    name: str | None = None
-    slug: str | None = None
-    bundle_id_ios: str | None = None
-    bundle_id_android: str | None = None
+    name: str | None = Field(default=None, min_length=1, max_length=255)
+    slug: str | None = Field(default=None, min_length=1, max_length=100, pattern=r"^[a-z0-9][a-z0-9-]*$")
+    bundle_id_ios: str | None = Field(default=None, max_length=255)
+    bundle_id_android: str | None = Field(default=None, max_length=255)
 
 
 class ModeCreate(BaseModel):
