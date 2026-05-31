@@ -15,6 +15,18 @@ from app.schemas.project import ModeCreate, ModeResponse, ProjectCreate, Project
 
 router = APIRouter()
 
+DEFAULT_MODES = [("dev", True), ("beta", False), ("prod", False)]
+
+
+async def _project_response(db: AsyncSession, project: Project) -> ProjectResponse:
+    result = await db.execute(
+        select(ProjectMode).where(ProjectMode.project_id == project.id).order_by(ProjectMode.name)
+    )
+    modes = [ModeResponse.model_validate(m) for m in result.scalars().all()]
+    resp = ProjectResponse.model_validate(project)
+    resp.modes = modes
+    return resp
+
 
 @router.post("/{org_slug}/projects", response_model=ProjectResponse, status_code=201)
 async def create_project(
@@ -24,7 +36,7 @@ async def create_project(
     current_user: User = Depends(get_current_user),
     _member: OrgMember = Depends(require_role(RoleEnum.editor)),
     db: AsyncSession = Depends(get_db),
-) -> Project:
+) -> ProjectResponse:
     result = await db.execute(select(Organization).where(Organization.slug == org_slug))
     org = result.scalar_one_or_none()
     if not org:
@@ -47,10 +59,15 @@ async def create_project(
     db.add(project)
     await db.flush()
 
+    # Seed default modes so the project is immediately usable.
+    for name, is_default in DEFAULT_MODES:
+        db.add(ProjectMode(project_id=project.id, name=name, is_default=is_default))
+    await db.flush()
+
     await write_audit(
         db, org.id, current_user.id, "project.created", "project", str(project.id), request=request
     )
-    return project
+    return await _project_response(db, project)
 
 
 @router.get("/{org_slug}/projects", response_model=list[ProjectResponse])
@@ -58,7 +75,7 @@ async def list_projects(
     org_slug: str,
     _member: OrgMember = Depends(require_role(RoleEnum.viewer)),
     db: AsyncSession = Depends(get_db),
-) -> list[Project]:
+) -> list[ProjectResponse]:
     result = await db.execute(select(Organization).where(Organization.slug == org_slug))
     org = result.scalar_one_or_none()
     if not org:
@@ -67,7 +84,7 @@ async def list_projects(
     result = await db.execute(
         select(Project).where(Project.org_id == org.id).order_by(Project.created_at.desc())
     )
-    return list(result.scalars().all())
+    return [await _project_response(db, p) for p in result.scalars().all()]
 
 
 @router.get("/{org_slug}/projects/{proj_slug}", response_model=ProjectResponse)
@@ -76,7 +93,7 @@ async def get_project(
     proj_slug: str,
     _member: OrgMember = Depends(require_role(RoleEnum.viewer)),
     db: AsyncSession = Depends(get_db),
-) -> Project:
+) -> ProjectResponse:
     result = await db.execute(select(Organization).where(Organization.slug == org_slug))
     org = result.scalar_one_or_none()
     if not org:
@@ -88,7 +105,7 @@ async def get_project(
     project = result.scalar_one_or_none()
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
-    return project
+    return await _project_response(db, project)
 
 
 @router.patch("/{org_slug}/projects/{proj_slug}", response_model=ProjectResponse)
@@ -131,7 +148,7 @@ async def update_project(
     await write_audit(
         db, org.id, current_user.id, "project.updated", "project", str(project.id), request=request
     )
-    return project
+    return await _project_response(db, project)
 
 
 @router.delete("/{org_slug}/projects/{proj_slug}", status_code=204)

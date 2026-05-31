@@ -26,7 +26,7 @@ async def list_orgs(
     return list(result.scalars().all())
 
 
-@router.post("/", response_model=OrgResponse, status_code=201)
+@router.post("", response_model=OrgResponse, status_code=201)
 async def create_org(
     body: OrgCreate,
     request: Request,
